@@ -25,12 +25,12 @@ def load_config() -> Dict[str, Any]:
     # Create default config if it doesn't exist
     if not os.path.exists(config_path):
         config['API'] = {
-            'solder_api_url': 'http://example.com/api/modpack/  ; Replace with your Solder API URL',
-            'modpack_name': 'your-modpack-name  ; Replace with your modpack name',
-            'build_version': 'latest  ; Replace with the desired build version or keep as "latest"'
+            'solder_api_url': 'http://example.com/api/modpack/',  # Replace with your Solder API URL
+            'modpack_name': 'your-modpack-name',  # Replace with your modpack name
+            'build_version': 'latest'  # Replace with the desired build version or keep as "latest"
         }
         config['Paths'] = {
-            'builds_dir': os.path.join(desktop_path, "Builds  ; Replace with your builds directory path")
+            'builds_dir': os.path.join(desktop_path, "Builds")  # Replace with your builds directory path
         }
         with open(config_path, 'w') as configfile:
             config.write(configfile)
