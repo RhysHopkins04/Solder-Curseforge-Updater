@@ -1,64 +1,217 @@
-import tkinter as tk
-from tkinter import messagebox
-from tkinter import filedialog
-from config import load_config
+import customtkinter as ctk
+from tkinter import messagebox, filedialog
+from config import load_config, save_config
+import main as main_module
+import threading
+import queue
+import sys
+import traceback
 
-def load_config_gui():
-    """Load configuration from config.ini file using GUI."""
-    config = load_config()
-    if config is None:
-        messagebox.showerror("Error", "Please fill in the required information in config.ini and run the script again.")
-    return config
+class ThreadSafeConsole:
+    def __init__(self, textbox, queue):
+        self.textbox = textbox
+        self.queue = queue
 
-def start_update(main_func):
+    def write(self, message):
+        self.queue.put(message)
+
+    def flush(self):
+        pass
+
+def process_console_queue(console_output, message_queue, root):
+    """Process messages in the queue and update the console"""
+    try:
+        while True:
+            message = message_queue.get_nowait()
+            console_output.insert(ctk.END, message)
+            console_output.see(ctk.END)
+            root.update_idletasks()
+    except queue.Empty:
+        root.after(100, process_console_queue, console_output, message_queue, root)
+
+def run_update_process(entries, console_output, start_button, message_queue, update_running):
+    """Run the update process in a separate thread"""
+    try:
+        # Update config with GUI values
+        config = load_config()
+        if config:
+            # Convert entries to strings before saving to config
+            config['SOLDER_API_URL'] = str(entries['solder_api_url'].get())
+            config['MODPACK_NAME'] = str(entries['modpack_name'].get())
+            config['BUILD_VERSION'] = str(entries['build_version'].get())
+            config['BUILDS_DIR'] = str(entries['builds_dir'].get())
+            
+            save_config(config)
+            
+            # Validate entries
+            if not all(config.values()):
+                messagebox.showerror("[ERROR 001]:", "Error please fill the required boxes with information.")
+                return
+
+            try:
+                # Run the main update function
+                main_module.main()
+            except Exception as e:
+                if str(e).startswith("[ERROR"):  # Check if it's a known error code
+                    messagebox.showerror(str(e).split(":")[0], str(e))
+                else:
+                    error_message = f"Error starting the update function (main.py failed to run): {str(e)}"
+                    messagebox.showerror("[ERROR 007]:", error_message)
+                print(error_message)
+    except Exception as e:
+        error_message = f"Program fault - please report to developer:\n\n{str(e)}\n\nStacktrace:\n{traceback.format_exc()}"
+        messagebox.showerror("[ERROR ***]:", error_message)
+        print(error_message)
+    finally:
+        # Clear the update running flag and re-enable the start button
+        update_running.clear()
+        start_button.configure(state="normal")
+
+def start_update(entries, console_output, start_button, root, update_running):
     """Start the modpack update process."""
-    config = load_config_gui()
-    if config:
-        main_func()
+    # Clear the console output
+    console_output.delete(1.0, ctk.END)
+    
+    # Disable the start button while updating
+    start_button.configure(state="disabled")
+    
+    # Set the update running flag
+    update_running.set()
+    
+    # Create a queue for thread-safe console output
+    message_queue = queue.Queue()
+    
+    # Redirect stdout and stderr to the thread-safe console
+    sys.stdout = ThreadSafeConsole(console_output, message_queue)
+    sys.stderr = ThreadSafeConsole(console_output, message_queue)
+    
+    # Start processing the console queue
+    process_console_queue(console_output, message_queue, root)
+    
+    # Start the update process in a separate thread
+    update_thread = threading.Thread(
+        target=run_update_process,
+        args=(entries, console_output, start_button, message_queue, update_running)  # Pass update_running
+    )
+    update_thread.daemon = True
+    update_thread.start()
 
 def select_directory(entry):
     """Open a dialog to select the builds directory."""
     directory = filedialog.askdirectory()
     if directory:
-        entry.delete(0, tk.END)
+        entry.delete(0, ctk.END)
         entry.insert(0, directory)
 
+def on_closing(root, update_running=False):
+    """Handle window closing event"""
+    if update_running:
+        if messagebox.askyesno("Quit", "An update is in progress. Are you sure you want to quit?\nThis will cancel the current operation."):
+            root.destroy()
+    else:
+        root.destroy()
+
 def start_gui(main_func):
-    # Create the main window
-    root = tk.Tk()
-    root.title("Modpack Auto-Updater")
+    try:
+        # Create the main window
+        root = ctk.CTk()
+        root.title("Modpack Auto-Updater")
+        root.geometry("720x600")
+        
+        # Variable to track if update is running
+        update_running = threading.Event()
 
-    # Create and place widgets
-    tk.Label(root, text="Solder API URL:").grid(row=0, column=0, sticky=tk.W)
-    solder_api_url_entry = tk.Entry(root, width=50)
-    solder_api_url_entry.grid(row=0, column=1)
+        def handle_close():
+            if update_running.is_set():
+                if messagebox.askyesno("Quit", "An update is in progress. Are you sure you want to quit?\nThis will cancel the current operation."):
+                    root.destroy()
+            else:
+                root.destroy()
 
-    tk.Label(root, text="Modpack Name:").grid(row=1, column=0, sticky=tk.W)
-    modpack_name_entry = tk.Entry(root, width=50)
-    modpack_name_entry.grid(row=1, column=1)
+        # Bind the closing protocol directly
+        root.protocol("WM_DELETE_WINDOW", handle_close)
 
-    tk.Label(root, text="Build Version:").grid(row=2, column=0, sticky=tk.W)
-    build_version_entry = tk.Entry(root, width=50)
-    build_version_entry.grid(row=2, column=1)
+        # Configure grid layout
+        root.grid_columnconfigure(1, weight=1)
+        root.grid_columnconfigure(2, weight=0)
+        root.grid_rowconfigure(6, weight=1)
 
-    tk.Label(root, text="Builds Directory:").grid(row=3, column=0, sticky=tk.W)
-    builds_dir_entry = tk.Entry(root, width=50)
-    builds_dir_entry.grid(row=3, column=1)
-    tk.Button(root, text="Browse...", command=lambda: select_directory(builds_dir_entry)).grid(row=3, column=2)
+        # Create and place widgets with adjusted sizes and padding
+        ctk.CTkLabel(root, text="Solder API URL:").grid(row=0, column=0, sticky=ctk.W, padx=10, pady=(10,5))
+        solder_api_url_entry = ctk.CTkEntry(root, width=500)
+        solder_api_url_entry.grid(row=0, column=1, columnspan=2, padx=10, pady=(10,5), sticky=ctk.W+ctk.E)
 
-    tk.Button(root, text="Start Update", command=lambda: start_update(main_func)).grid(row=4, column=1, pady=10)
+        ctk.CTkLabel(root, text="Modpack Name:").grid(row=1, column=0, sticky=ctk.W, padx=10, pady=5)
+        modpack_name_entry = ctk.CTkEntry(root, width=300)
+        modpack_name_entry.grid(row=1, column=1, columnspan=2, padx=10, pady=5, sticky=ctk.W+ctk.E)
 
-    # Load initial config values
-    config = load_config()
-    if config:
-        solder_api_url_entry.insert(0, config['SOLDER_API_URL'])
-        modpack_name_entry.insert(0, config['MODPACK_NAME'])
-        build_version_entry.insert(0, config['BUILD_VERSION'])
-        builds_dir_entry.insert(0, config['BUILDS_DIR'])
+        ctk.CTkLabel(root, text="Build Version:").grid(row=2, column=0, sticky=ctk.W, padx=10, pady=5)
+        build_version_entry = ctk.CTkEntry(root, width=100)
+        build_version_entry.grid(row=2, column=1, columnspan=2, padx=10, pady=5, sticky=ctk.W+ctk.E)
 
-    # Start the main event loop
-    root.mainloop()
+        ctk.CTkLabel(root, text="Builds Directory:").grid(row=3, column=0, sticky=ctk.W, padx=10, pady=5)
+        builds_dir_entry = ctk.CTkEntry(root, width=300)
+        builds_dir_entry.grid(row=3, column=1, padx=10, pady=5, sticky=ctk.W+ctk.E)
+        
+        browse_button = ctk.CTkButton(
+            root, 
+            text="Browse...", 
+            command=lambda: select_directory(builds_dir_entry),
+            width=80
+        )
+        browse_button.grid(row=3, column=2, padx=(10, 10), pady=10, sticky=ctk.W)
+
+        # Start Update button
+        start_button = ctk.CTkButton(
+            root, 
+            text="Start Update", 
+            command=lambda: start_update({
+                'solder_api_url': solder_api_url_entry,
+                'modpack_name': modpack_name_entry,
+                'build_version': build_version_entry,
+                'builds_dir': builds_dir_entry
+            }, console_output, start_button, root, update_running),  # Pass update_running
+            width=100
+        )
+        start_button.grid(row=4, column=1, pady=10)
+
+        # Load initial config values
+        config = load_config()
+        if config:
+            solder_api_url_entry.insert(0, config['SOLDER_API_URL'])
+            modpack_name_entry.insert(0, config['MODPACK_NAME'])
+            build_version_entry.insert(0, config['BUILD_VERSION'])
+            builds_dir_entry.insert(0, config['BUILDS_DIR'])
+
+        # Add console output window
+        console_output = ctk.CTkTextbox(
+            root, 
+            width=700,
+            height=300,
+            font=("Courier", 12)  # Monospace font for better readability
+        )
+        console_output.grid(row=6, column=0, columnspan=3, padx=10, pady=(5,10), sticky=ctk.W+ctk.E+ctk.N+ctk.S)
+
+        # Add a label above the console
+        console_label = ctk.CTkLabel(root, text="Console Output:")
+        console_label.grid(row=5, column=0, sticky=ctk.W, padx=10, pady=(10,0))
+
+        # Center the window on the screen
+        root.update_idletasks()
+        screen_width = root.winfo_screenwidth()
+        screen_height = root.winfo_screenheight()
+        x = (screen_width - root.winfo_width()) // 2
+        y = (screen_height - root.winfo_height()) // 2
+        root.geometry(f"+{x}+{y}")
+
+        # Start the main event loop
+        root.mainloop()
+        
+    except Exception as e:
+        # Use ERROR 000 for GUI startup errors
+        error_message = f"Error opening the program GUI: {str(e)}"
+        messagebox.showerror("[ERROR 000]:", error_message)
+        raise SystemExit(1)
 
 if __name__ == "__main__":
-    from main import main
-    start_gui(main)
+    start_gui(main_module.main)

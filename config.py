@@ -10,39 +10,23 @@ def load_config() -> Dict[str, Any]:
     # Get actual Desktop path
     desktop_path = os.path.join(os.path.expanduser("~"), "Desktop")
     
-    # Default values with placeholders
-    defaults = {
-        'API': {
-            'solder_api_url': 'http://example.com/api/modpack/',  # Placeholder URL
-            'modpack_name': 'your-modpack-name',  # Placeholder modpack name
-            'build_version': 'latest'
-        },
-        'Paths': {
-            'builds_dir': os.path.join(desktop_path, "Builds")  # Use actual Desktop path
-        }
-    }
-
     # Create default config if it doesn't exist
     if not os.path.exists(config_path):
         config['API'] = {
-            'solder_api_url': 'http://example.com/api/modpack/',  # Replace with your Solder API URL
-            'modpack_name': 'your-modpack-name',  # Replace with your modpack name
-            'build_version': 'latest'  # Replace with the desired build version or keep as "latest"
+            'solder_api_url': '',  # Empty instead of placeholder
+            'modpack_name': '',  # Empty instead of placeholder
+            'build_version': 'latest'
         }
         config['Paths'] = {
-            'builds_dir': os.path.join(desktop_path, "Builds")  # Replace with your builds directory path
+            'builds_dir': os.path.join(desktop_path, "Builds")
         }
         with open(config_path, 'w') as configfile:
             config.write(configfile)
-        print("Default config.ini generated. Please fill in the required information and run the script again.")
-        return None
-    else:
-        config.read(config_path)
-        # Check if placeholders are still present
-        if 'example.com' in config['API']['solder_api_url'] or 'your-modpack-name' in config['API']['modpack_name']:
-            print("Please fill in the required information in config.ini and run the script again.")
-            return None
-        # Always ensure builds_dir points to actual Desktop
+
+    config.read(config_path)
+    
+    # Ensure builds_dir points to actual Desktop if not set
+    if 'builds_dir' not in config['Paths'] or not config['Paths']['builds_dir']:
         config['Paths']['builds_dir'] = os.path.join(desktop_path, "Builds")
         with open(config_path, 'w') as configfile:
             config.write(configfile)
@@ -53,3 +37,18 @@ def load_config() -> Dict[str, Any]:
         'BUILD_VERSION': config.get('API', 'build_version'),
         'BUILDS_DIR': config.get('Paths', 'builds_dir')
     }
+
+def save_config(config: Dict[str, Any]):
+    """Save configuration to config.ini file."""
+    config_parser = configparser.ConfigParser()
+    config_parser['API'] = {
+        'solder_api_url': config['SOLDER_API_URL'],
+        'modpack_name': config['MODPACK_NAME'],
+        'build_version': config['BUILD_VERSION']
+    }
+    config_parser['Paths'] = {
+        'builds_dir': config['BUILDS_DIR']
+    }
+    config_path = os.path.join(os.path.dirname(__file__), 'config.ini')
+    with open(config_path, 'w') as configfile:
+        config_parser.write(configfile)

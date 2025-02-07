@@ -1,0 +1,30 @@
+Program GUI Error codes:
+000 = Error opening the program gui.
+001 = Error please fill the required boxes with information.
+002 = Error invalid Solder API Url, please confirm your solder api url.
+003 = Error invalid modpack name, this modpack does not exist in this api response.
+004 = Error invalid build version, this build number does not exist of this modpack, please try again or use "latest".
+005 = Error in build directory selection, Please ensure the directory is valid for writing content to.
+006 = Error loading the config file.
+007 = Error starting the update function (main.py failed to run).
+
+Program Update function error codes:
+010 = Error sanitizing the filename url.
+011 = Error fetching modpack information -> points to error 002/003.
+012 = Error fetching build details -> points to error 004.
+013 = Error fetching mod list -> either points to 011/012 OR Modpack does not contain valid mods.
+014 = Error calculating md5 hash of files.
+015 = Error fetching existing mod files, Please clear your existing "Build" directory or select a new "Builds Directory".
+016 = Error in comparing existing mods and mods in that build -> points to 015/014.
+017 = Error downloading the mod <modname>.
+018 = Error extracting files.
+019 = Error Could not extract slug for mod from CurseForge link:
+020 = Warning Mod is not from Curseforge, link: <> ensure the mod allows distribution.
+021 = Error checking mod availability with primary CurseForge API.
+022 = Error Mod has failed to be found on curseforge, please ensure that the correct version is published on curseforge.
+023 = Error, couldnt find correct mod version, using closest matching, check to ensure compat.
+
+021 = No mods could be found through either API, please check the pack contains mods.
+021 = Error generating modlist.html.
+022 = Error creating curseforge structure.
+023 = Error zipping curseforge modpack.
