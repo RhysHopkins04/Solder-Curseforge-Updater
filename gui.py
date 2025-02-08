@@ -29,7 +29,7 @@ def process_console_queue(console_output, message_queue, root):
     except queue.Empty:
         root.after(100, process_console_queue, console_output, message_queue, root)
 
-def run_update_process(entries, console_output, start_button, message_queue, update_running):
+def run_update_process(entries, console_output, start_button, stop_button, message_queue, update_running):
     """Run the update process in a separate thread"""
     try:
         # Update config with GUI values
@@ -39,41 +39,34 @@ def run_update_process(entries, console_output, start_button, message_queue, upd
             config['SOLDER_API_URL'] = str(entries['solder_api_url'].get())
             config['MODPACK_NAME'] = str(entries['modpack_name'].get())
             config['BUILD_VERSION'] = str(entries['build_version'].get())
+            config['AUTHOR'] = str(entries['author'].get())
             config['BUILDS_DIR'] = str(entries['builds_dir'].get())
             
             save_config(config)
             
-            # Validate entries
-            if not all(config.values()):
-                messagebox.showerror("[ERROR 001]:", "Error please fill the required boxes with information.")
-                return
-
             try:
-                # Run the main update function
-                main_module.main()
+                # Run the main update function with update_running flag
+                main_module.main(update_running)
             except Exception as e:
-                if str(e).startswith("[ERROR"):  # Check if it's a known error code
+                if str(e).startswith("[ERROR"):
                     messagebox.showerror(str(e).split(":")[0], str(e))
                 else:
-                    error_message = f"Error starting the update function (main.py failed to run): {str(e)}"
+                    error_message = f"Error in update process: {str(e)}"
                     messagebox.showerror("[ERROR 007]:", error_message)
                 print(error_message)
-    except Exception as e:
-        error_message = f"Program fault - please report to developer:\n\n{str(e)}\n\nStacktrace:\n{traceback.format_exc()}"
-        messagebox.showerror("[ERROR ***]:", error_message)
-        print(error_message)
     finally:
-        # Clear the update running flag and re-enable the start button
-        update_running.clear()
+        # Re-enable start button and hide stop button
         start_button.configure(state="normal")
+        stop_button.grid_remove()
 
-def start_update(entries, console_output, start_button, root, update_running):
+def start_update(entries, console_output, start_button, stop_button, root, update_running):
     """Start the modpack update process."""
     # Clear the console output
     console_output.delete(1.0, ctk.END)
     
-    # Disable the start button while updating
+    # Disable the start button and show stop button while updating
     start_button.configure(state="disabled")
+    stop_button.grid()  # Show the stop button
     
     # Set the update running flag
     update_running.set()
@@ -91,10 +84,16 @@ def start_update(entries, console_output, start_button, root, update_running):
     # Start the update process in a separate thread
     update_thread = threading.Thread(
         target=run_update_process,
-        args=(entries, console_output, start_button, message_queue, update_running)  # Pass update_running
+        args=(entries, console_output, start_button, stop_button, message_queue, update_running)
     )
     update_thread.daemon = True
     update_thread.start()
+
+def stop_update(stop_button, update_running):
+    """Handle stopping the update process"""
+    if messagebox.askyesno("Stop Update", "Are you sure you want to stop the current update?\nThis will cancel the operation."):
+        update_running.clear()
+        stop_button.grid_remove()  # Hide the stop button
 
 def select_directory(entry):
     """Open a dialog to select the builds directory."""
@@ -149,9 +148,13 @@ def start_gui(main_func):
         build_version_entry = ctk.CTkEntry(root, width=100)
         build_version_entry.grid(row=2, column=1, columnspan=2, padx=10, pady=5, sticky=ctk.W+ctk.E)
 
-        ctk.CTkLabel(root, text="Builds Directory:").grid(row=3, column=0, sticky=ctk.W, padx=10, pady=5)
+        ctk.CTkLabel(root, text="Author:").grid(row=3, column=0, sticky=ctk.W, padx=10, pady=5)
+        author_entry = ctk.CTkEntry(root, width=300)
+        author_entry.grid(row=3, column=1, columnspan=2, padx=10, pady=5, sticky=ctk.W+ctk.E)
+
+        ctk.CTkLabel(root, text="Builds Directory:").grid(row=4, column=0, sticky=ctk.W, padx=10, pady=5)
         builds_dir_entry = ctk.CTkEntry(root, width=300)
-        builds_dir_entry.grid(row=3, column=1, padx=10, pady=5, sticky=ctk.W+ctk.E)
+        builds_dir_entry.grid(row=4, column=1, padx=10, pady=5, sticky=ctk.W+ctk.E)
         
         browse_button = ctk.CTkButton(
             root, 
@@ -159,21 +162,36 @@ def start_gui(main_func):
             command=lambda: select_directory(builds_dir_entry),
             width=80
         )
-        browse_button.grid(row=3, column=2, padx=(10, 10), pady=10, sticky=ctk.W)
+        browse_button.grid(row=4, column=2, padx=(10, 10), pady=5, sticky=ctk.W)
 
-        # Start Update button
+        # Create Start and Stop buttons
+        button_frame = ctk.CTkFrame(root)
+        button_frame.grid(row=5, column=1, pady=10)
+
         start_button = ctk.CTkButton(
-            root, 
+            button_frame, 
             text="Start Update", 
             command=lambda: start_update({
                 'solder_api_url': solder_api_url_entry,
                 'modpack_name': modpack_name_entry,
                 'build_version': build_version_entry,
+                'author': author_entry,
                 'builds_dir': builds_dir_entry
-            }, console_output, start_button, root, update_running),  # Pass update_running
+            }, console_output, start_button, stop_button, root, update_running),
             width=100
         )
-        start_button.grid(row=4, column=1, pady=10)
+        start_button.grid(row=0, column=0, padx=5)
+
+        stop_button = ctk.CTkButton(
+            button_frame,
+            text="■",  # Square symbol
+            command=lambda: stop_update(stop_button, update_running),
+            width=40,
+            fg_color="orange",
+            hover_color="darkorange"
+        )
+        stop_button.grid(row=0, column=1, padx=5)
+        stop_button.grid_remove()  # Initially hidden
 
         # Load initial config values
         config = load_config()
@@ -181,6 +199,7 @@ def start_gui(main_func):
             solder_api_url_entry.insert(0, config['SOLDER_API_URL'])
             modpack_name_entry.insert(0, config['MODPACK_NAME'])
             build_version_entry.insert(0, config['BUILD_VERSION'])
+            author_entry.insert(0, config['AUTHOR'])
             builds_dir_entry.insert(0, config['BUILDS_DIR'])
 
         # Add console output window

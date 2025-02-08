@@ -13,9 +13,10 @@ def load_config() -> Dict[str, Any]:
     # Create default config if it doesn't exist
     if not os.path.exists(config_path):
         config['API'] = {
-            'solder_api_url': '',  # Empty instead of placeholder
-            'modpack_name': '',  # Empty instead of placeholder
-            'build_version': 'latest'
+            'solder_api_url': '',
+            'modpack_name': '',
+            'build_version': 'latest',
+            'author': ''
         }
         config['Paths'] = {
             'builds_dir': os.path.join(desktop_path, "Builds")
@@ -35,6 +36,7 @@ def load_config() -> Dict[str, Any]:
         'SOLDER_API_URL': config.get('API', 'solder_api_url'),
         'MODPACK_NAME': config.get('API', 'modpack_name'),
         'BUILD_VERSION': config.get('API', 'build_version'),
+        'AUTHOR': config.get('API', 'author', fallback='Unknown'), # Has fallback to 'Unknown' if cant be found from api (likely can't)
         'BUILDS_DIR': config.get('Paths', 'builds_dir')
     }
 
@@ -44,7 +46,8 @@ def save_config(config: Dict[str, Any]):
     config_parser['API'] = {
         'solder_api_url': config['SOLDER_API_URL'],
         'modpack_name': config['MODPACK_NAME'],
-        'build_version': config['BUILD_VERSION']
+        'build_version': config['BUILD_VERSION'],
+        'author': config['AUTHOR']
     }
     config_parser['Paths'] = {
         'builds_dir': config['BUILDS_DIR']
