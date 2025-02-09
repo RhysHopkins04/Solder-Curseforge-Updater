@@ -5,7 +5,6 @@ import main as main_module
 import threading
 import queue
 import sys
-import traceback
 
 class ThreadSafeConsole:
     def __init__(self, textbox, queue):
@@ -102,13 +101,13 @@ def select_directory(entry):
         entry.delete(0, ctk.END)
         entry.insert(0, directory)
 
-def on_closing(root, update_running=False):
-    """Handle window closing event"""
-    if update_running:
-        if messagebox.askyesno("Quit", "An update is in progress. Are you sure you want to quit?\nThis will cancel the current operation."):
-            root.destroy()
-    else:
-        root.destroy()
+# def on_closing(root, update_running=False):
+#     """Handle window closing event"""
+#     if update_running:
+#         if messagebox.askyesno("Quit", "An update is in progress. Are you sure you want to quit?\nThis will cancel the current operation."):
+#             root.destroy()
+#     else:
+#         root.destroy()
 
 def start_gui(main_func):
     try:

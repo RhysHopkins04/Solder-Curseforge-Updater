@@ -15,7 +15,7 @@ import multiprocessing
 def sanitize_filename(url):
     """Sanitize the filename to avoid issues with invalid characters."""
     filename = os.path.basename(url)
-    filename = filename.split('?')[0]  # Remove query parameters
+    filename = filename.split('?')[0]
     return re.sub(r'[<>:"/\\|?*]', '_', filename)
 
 def fetch_modpack_info():
@@ -379,11 +379,11 @@ def extract_slugs_from_mod_list(mod_list):
     print("")
     return slugs
 
-def find_closest_version(mod_version, available_versions):
-    """Find the closest matching version from the available versions."""
-    from difflib import get_close_matches
-    closest_matches = get_close_matches(mod_version, available_versions, n=1, cutoff=0.1)
-    return closest_matches[0] if closest_matches else None
+# def find_closest_version(mod_version, available_versions):
+#     """Find the closest matching version from the available versions."""
+#     from difflib import get_close_matches
+#     closest_matches = get_close_matches(mod_version, available_versions, n=1, cutoff=0.1)
+#     return closest_matches[0] if closest_matches else None
 
 def backup_check_mod_availability(slugs, unavailable_mods, minecraft_version):
     """Check mod availability using the backup API."""
@@ -656,9 +656,16 @@ def zip_curseforge_modpack(curseforge_dir):
     
     print(f"Created modpack ZIP at: {zip_filename}")
 
-def sort_mod_list(mod_list):
-    """Sort the mod list alphabetically by mod name."""
-    return sorted(mod_list, key=lambda mod: mod["name"].lower())
+# def sort_mod_list(mod_list):
+#     """Sort the mod list alphabetically by mod name."""
+#     return sorted(mod_list, key=lambda mod: mod["name"].lower())
+
+def check_stop(update_running=None):
+    """Check if the user has requested to stop the update process."""
+    if update_running and not update_running.is_set():
+        print("\nUpdate process cancelled by user.")
+        return True
+    return False
 
 def main(update_running=None):
     try:
@@ -667,10 +674,7 @@ def main(update_running=None):
             print("[ERROR 001]: Error please fill the required boxes with information.")
             return
 
-        # Add check for termination after each major step
-        if update_running and not update_running.is_set():
-            print("\nUpdate process cancelled by user.")
-            return
+        check_stop(update_running)
 
         global SOLDER_API_URL, MODPACK_NAME, BUILD_VERSION, BUILDS_DIR, AUTHOR
         SOLDER_API_URL = config['SOLDER_API_URL']
@@ -716,31 +720,31 @@ def main(update_running=None):
         if not modpack_info:
             print("[ERROR 011]: Error fetching modpack information.")
             return
+        check_stop(update_running)
 
         build_details = fetch_build_details(BUILD_VERSION)
         if not build_details:
             print("[ERROR 012]: Error fetching build details.")
             return
+        check_stop(update_running)
 
         mod_list, non_mod_list, forge_list = fetch_mod_list(build_details)
         if not mod_list:
             print("[ERROR 013]: Error fetching mod list.")
             return
+        check_stop(update_running)
 
         existing_mods = fetch_existing_mods(downloads_dir)
         if existing_mods is None:
             print("[ERROR 015]: Error fetching existing mods.")
             return
+        check_stop(update_running)
 
         mods_to_download, mods_to_remove = compare_mods(existing_mods, mod_list, non_mod_list, downloads_dir)
         if mods_to_download is None or mods_to_remove is None:
             print("[ERROR 016]: Error comparing mods.")
             return
-
-        # Add termination checks at key points
-        if update_running and not update_running.is_set():
-            print("\nUpdate process cancelled by user.")
-            return
+        check_stop(update_running)
 
         # Download process
         if mods_to_download:
