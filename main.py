@@ -12,14 +12,26 @@ from config import load_config
 import concurrent.futures
 import multiprocessing
 
-def sanitize_filename(url):
-    """Sanitize the filename to avoid issues with invalid characters."""
-    filename = os.path.basename(url)
-    filename = filename.split('?')[0]
-    return re.sub(r'[<>:"/\\|?*]', '_', filename)
+def check_stop(update_running=None):
+    """Check if the user has requested to stop the update process.
+
+    Args:
+        update_running (threading.Event, optional): An event flag to indicate if the update process should continue running. Defaults to None.
+
+    Returns:
+        bool: True if the update process should stop, False otherwise.
+    """
+    if update_running and not update_running.is_set():
+        print("\nUpdate process cancelled by user.")
+        return True
+    return False
 
 def fetch_modpack_info():
-    """Fetch modpack information from the Solder API."""
+    """Fetch modpack information from the Solder API.
+
+    Returns:
+        dict: The modpack information if successful, None otherwise.
+    """
     url = f"{SOLDER_API_URL}{MODPACK_NAME}/"
     response = requests.get(url)
     
@@ -30,7 +42,14 @@ def fetch_modpack_info():
         return None
 
 def fetch_build_details(build_version):
-    """Fetch build details (mod files) for the specified build version."""
+    """Fetch build details (mod files) for the specified build version.
+
+    Args:
+        build_version (str): The build version to fetch details for.
+
+    Returns:
+        dict: The build details if successful, None otherwise.
+    """
     try:
         if build_version.lower() == "latest":
             modpack_info = fetch_modpack_info()
@@ -67,7 +86,14 @@ def fetch_build_details(build_version):
         return None
 
 def fetch_mod_list(build_details):
-    """Fetch the mod list from the build details."""
+    """Fetch the mod list from the build details.
+
+    Args:
+        build_details (dict): The build details containing mod information.
+
+    Returns:
+        tuple: A tuple containing the mod list, non-mod list, and forge list.
+    """
     mod_list = []
     non_mod_list = []
     forge_list = []
@@ -111,7 +137,14 @@ def fetch_mod_list(build_details):
     return mod_list, non_mod_list, forge_list
 
 def calculate_md5(file_path):
-    """Calculate the MD5 hash of a file."""
+    """Calculate the MD5 hash of a file.
+
+    Args:
+        file_path (str): The path to the file.
+
+    Returns:
+        str: The MD5 hash of the file, or None if an error occurs.
+    """
     hash_md5 = hashlib.md5()
     try:
         with open(file_path, "rb") as f:
@@ -123,7 +156,14 @@ def calculate_md5(file_path):
         return None
 
 def fetch_existing_mods(mods_folder_path):
-    """Fetch existing mods and their MD5 hashes from the mods folder."""
+    """Fetch existing mods and their MD5 hashes from the mods folder.
+
+    Args:
+        mods_folder_path (str): The path to the mods folder.
+
+    Returns:
+        dict: A dictionary of existing mods and their MD5 hashes, or None if an error occurs.
+    """
     existing_mods = {}
     try:
         if os.path.exists(mods_folder_path):
@@ -137,7 +177,31 @@ def fetch_existing_mods(mods_folder_path):
         print(f"[ERROR 015]: Error fetching existing mods from {mods_folder_path}: {e}")
         return None
 
+def sanitize_filename(url):
+    """Sanitize the filename to avoid issues with invalid characters.
+
+    Args:
+        url (str): The URL from which to extract the filename.
+
+    Returns:
+        str: The sanitized filename.
+    """
+    filename = os.path.basename(url)
+    filename = filename.split('?')[0]
+    return re.sub(r'[<>:"/\\|?*]', '_', filename)
+
 def compare_mods(existing_mods, mod_list, non_mod_list, downloads_dir):
+    """Compare existing mods with the mod list and identify mods to download or remove.
+
+    Args:
+        existing_mods (dict): A dictionary of existing mods and their MD5 hashes.
+        mod_list (list): The list of mods to compare.
+        non_mod_list (list): The list of non-mod files to compare.
+        downloads_dir (str): The directory where mods are downloaded.
+
+    Returns:
+        tuple: A tuple containing the list of mods to download and the list of mods to remove.
+    """
     mods_to_download = []
     mods_to_remove = []
     up_to_date_count = 0
@@ -205,7 +269,15 @@ def compare_mods(existing_mods, mod_list, non_mod_list, downloads_dir):
         return None, None
 
 def download_mods(mod_list, downloads_dir):
-    """Download mods from the provided mod list."""
+    """Download mods from the provided mod list.
+
+    Args:
+        mod_list (list): The list of mods to download.
+        downloads_dir (str): The directory where mods will be downloaded.
+
+    Returns:
+        list: A list of downloaded file paths, or None if an error occurs.
+    """
     if not mod_list:
         return []  # Return empty list for no mods to download
         
@@ -259,7 +331,18 @@ def download_mods(mod_list, downloads_dir):
         print(f"[ERROR 017]: Error downloading mods: {e}")
         return None  # Return None for actual errors
 
+# Similar name to extract_files because it is used to allow multiple files to be started with extraction simultaneously
 def extract_file(file_path, minecraft_dir, overrides_dir, is_mod, counter, total):
+    """Extract a file to the specified directory.
+
+    Args:
+        file_path (str): The path to the file to extract.
+        minecraft_dir (str): The directory to extract mod files to.
+        overrides_dir (str): The directory to extract non-mod files to.
+        is_mod (bool): Whether the file is a mod.
+        counter (multiprocessing.Value): A counter to track the number of extracted files.
+        total (int): The total number of files to extract.
+    """
     filename = os.path.basename(file_path)
     item = filename.replace(".zip", "").lower()
 
@@ -282,6 +365,14 @@ def extract_file(file_path, minecraft_dir, overrides_dir, is_mod, counter, total
         print(f"Extracted {counter.value}/{total} {filename} to {'minecraft/mods' if is_mod else 'minecraft'}...")
 
 def extract_files(downloaded_files, minecraft_dir, overrides_dir, is_mod=True):
+    """Extract multiple files to the specified directory.
+
+    Args:
+        downloaded_files (list): The list of downloaded file paths.
+        minecraft_dir (str): The directory to extract mod files to.
+        overrides_dir (str): The directory to extract non-mod files to.
+        is_mod (bool, optional): Whether the files are mods. Defaults to True.
+    """
     if not downloaded_files:
         print("No new files to extract.")
         return
@@ -299,8 +390,63 @@ def extract_files(downloaded_files, minecraft_dir, overrides_dir, is_mod=True):
     print(f"Extraction completed in {end_time - start_time:.2f} seconds")
     print("")
 
+def extract_slug_from_url(url):
+    """Extract the mod slug from the CurseForge URL.
+
+    Args:
+        url (str): The URL to extract the slug from.
+
+    Returns:
+        str: The extracted slug, or None if the URL is invalid.
+    """
+    parsed_url = urlparse(url)
+    path_parts = parsed_url.path.split('/')
+    if len(path_parts) > 2 and path_parts[1] == "minecraft" and path_parts[2] == "mc-mods":
+        return path_parts[3]
+    elif len(path_parts) > 1 and path_parts[1] == "projects":
+        return path_parts[2]
+    return None
+
+def extract_slugs_from_mod_list(mod_list):
+    """Extract slugs from the mod list.
+
+    Args:
+        mod_list (list): The list of mods to extract slugs from.
+
+    Returns:
+        dict: A dictionary mapping mod names to their extracted slugs.
+    """
+    print("Extracting slugs from URLs...")
+    slugs = {}
+    total_mods = 0
+
+    for mod in mod_list:
+        mod_name = mod["name"].lower()
+        mod_link = mod.get("link")
+
+        total_mods += 1
+        if mod_link and "curseforge.com" in mod_link:
+            slug = extract_slug_from_url(mod_link)
+            if slug:
+                slugs[mod["name"]] = slug
+            else:
+                print(f"[ERROR 019]: Could not extract slug for {mod['name']} from link: {mod_link}")
+        else:
+            print(f"[ERROR 020]: {mod['name']} isn't from CurseForge. Link: {mod_link}. Ensure the license allows redistribution.")
+
+    print(f"Slugs extracted: {len(slugs)}/{total_mods}")
+    print("")
+    return slugs
+
 def rate_limited(max_per_second):
-    """Decorator to limit the number of requests per second."""
+    """Decorator to limit the number of requests per second.
+
+    Args:
+        max_per_second (int): The maximum number of requests per second.
+
+    Returns:
+        function: The decorated function with rate limiting.
+    """
     min_interval = 1.0 / max_per_second
     def decorator(func):
         last_called = [0.0]
@@ -317,7 +463,15 @@ def rate_limited(max_per_second):
 
 @rate_limited(5)  # Limit to 5 requests per second
 def fetch_mod_details(slug, use_backup=False):
-    """Fetch mod details from the primary API using the mod slug."""
+    """Fetch mod details from the primary API using the mod slug.
+
+    Args:
+        slug (str): The mod slug to fetch details for.
+        use_backup (bool, optional): Whether to use the backup API. Defaults to False.
+
+    Returns:
+        tuple: A tuple containing the mod details and the API source, or None and the API source if an error occurs.
+    """
     primary_api_url = f"https://api.cfwidget.com/minecraft/mc-mods/{slug}"
     backup_api_url = f"https://www.cflookup.com/minecraft/mc-mods/{slug}.json"
     
@@ -345,119 +499,17 @@ def fetch_mod_details(slug, use_backup=False):
         print(f"Error fetching mod details for slug: {slug} - Exception: {e}")
     return None, "backup" if use_backup else "primary"
 
-def extract_slug_from_url(url):
-    """Extract the mod slug from the CurseForge URL."""
-    parsed_url = urlparse(url)
-    path_parts = parsed_url.path.split('/')
-    if len(path_parts) > 2 and path_parts[1] == "minecraft" and path_parts[2] == "mc-mods":
-        return path_parts[3]
-    elif len(path_parts) > 1 and path_parts[1] == "projects":
-        return path_parts[2]
-    return None
-
-def extract_slugs_from_mod_list(mod_list):
-    """Extract slugs from the mod list."""
-    print("Extracting slugs from URLs...")
-    slugs = {}
-    total_mods = 0
-
-    for mod in mod_list:
-        mod_name = mod["name"].lower()
-        mod_link = mod.get("link")
-
-        total_mods += 1
-        if mod_link and "curseforge.com" in mod_link:
-            slug = extract_slug_from_url(mod_link)
-            if slug:
-                slugs[mod["name"]] = slug
-            else:
-                print(f"[ERROR 019]: Could not extract slug for {mod['name']} from link: {mod_link}")
-        else:
-            print(f"[ERROR 020]: {mod['name']} isn't from CurseForge. Link: {mod_link}. Ensure the license allows redistribution.")
-
-    print(f"Slugs extracted: {len(slugs)}/{total_mods}")
-    print("")
-    return slugs
-
-# def find_closest_version(mod_version, available_versions):
-#     """Find the closest matching version from the available versions."""
-#     from difflib import get_close_matches
-#     closest_matches = get_close_matches(mod_version, available_versions, n=1, cutoff=0.1)
-#     return closest_matches[0] if closest_matches else None
-
-def backup_check_mod_availability(slugs, unavailable_mods, minecraft_version):
-    """Check mod availability using the backup API."""
-    still_unavailable = []
-    backup_available = []
-
-    for mod in unavailable_mods:
-        mod_name = mod["name"].lower()
-        
-        slug = slugs.get(mod["name"])  # Use mod object structure
-        if not slug:
-            still_unavailable.append(mod)  # Store full mod object
-            continue
-
-        mod_details, api_source = fetch_mod_details(slug, use_backup=True)
-        if api_source == "error":  # Check for critical error
-            print(f"[ERROR 022]: {slug} has failed to be found on CurseForge. Ensure your link is correct and version {mod['version']} exists.")
-            return False, False  # Special error return value
-
-        if mod_details and api_source == "backup":
-            project_id = mod_details.get("id")
-            files = mod_details.get("files", [])
-
-            found = False
-            mod_version = mod["version"].strip().lower()  # Define mod_version here
-            for file in files:
-                file_versions = file.get("gameVersions", [])
-                if isinstance(file_versions, list) and minecraft_version in file_versions:
-                    file_name_version = file["filename"].strip().lower()
-
-                    if mod_version in file_name_version:
-                        mod["projectID"] = project_id
-                        mod["fileID"] = file["fileId"]
-                        backup_available.append(mod)
-                        found = True
-                        break
-
-            if not found:
-                # Try to find the closest matching version
-                closest_version = None
-                for file in files:
-                    file_name_version = file["filename"].strip().lower()
-                    if mod_version in file_name_version:
-                        closest_version = file
-                        break
-
-                if not closest_version:
-                    for file in files:
-                        file_versions = file.get("gameVersions", [])
-                        if minecraft_version in file_versions:
-                            closest_version = file
-                            break
-
-                if closest_version:
-                    mod["projectID"] = project_id
-                    mod["fileID"] = closest_version["fileId"]
-                    backup_available.append(mod)
-                    found = True
-                    print(f"[ERROR 023] Using closest matching version for {mod['name']}: {closest_version['filename']} (mod_version: {mod['version']}, minecraft_version: {minecraft_version}, selected file: {closest_version['filename']}, versions: {closest_version.get('gameVersions', [])}) Please ensure Compatibility before distribution.")
-                if not found:
-                    still_unavailable.append(mod)
-                    print(f"[ERROR 022] No matching files found for {mod['name']} (slug: {slug}, version: {mod['version']})")
-                    return False, False  # Special error return value
-                    # print(f"Checked files: {[file['filename'] for file in files]}")
-                    # print(f"File versions: {[file.get('gameVersions', []) for file in files]}")
-        else:
-            still_unavailable.append(mod)
-            print(f"[ERROR 022]: Mod details not found for {mod['name']} (slug: {slug})")
-            return False, False  # Special error return value
-
-    return backup_available, still_unavailable
-
 def check_mod_availability(slugs, mod_list, minecraft_version):
-    """Check if the mods are available on CurseForge by checking their slugs."""
+    """Check if the mods are available on CurseForge by checking their slugs.
+
+    Args:
+        slugs (dict): A dictionary mapping mod names to their slugs.
+        mod_list (list): The list of mods to check availability for.
+        minecraft_version (str): The Minecraft version to check compatibility with.
+
+    Returns:
+        tuple: A tuple containing the list of available mods and the list of unavailable mods.
+    """
     print("Checking mod availability... This may take a while due to API limits...")
     available_mods = []
     unavailable_mods = []
@@ -528,8 +580,94 @@ def check_mod_availability(slugs, mod_list, minecraft_version):
 
     return available_mods, unavailable_mods
 
+def backup_check_mod_availability(slugs, unavailable_mods, minecraft_version):
+    """Check mod availability using the backup API.
+
+    Args:
+        slugs (dict): A dictionary mapping mod names to their slugs.
+        unavailable_mods (list): The list of unavailable mods to check.
+        minecraft_version (str): The Minecraft version to check compatibility with.
+
+    Returns:
+        tuple: A tuple containing the list of backup available mods and the list of still unavailable mods.
+    """
+    still_unavailable = []
+    backup_available = []
+
+    for mod in unavailable_mods:
+        mod_name = mod["name"].lower()
+        
+        slug = slugs.get(mod["name"])  # Use mod object structure
+        if not slug:
+            still_unavailable.append(mod)  # Store full mod object
+            continue
+
+        mod_details, api_source = fetch_mod_details(slug, use_backup=True)
+        if api_source == "error":  # Check for critical error
+            print(f"[ERROR 022]: {slug} has failed to be found on CurseForge. Ensure your link is correct and version {mod['version']} exists.")
+            return False, False  # Special error return value
+
+        if mod_details and api_source == "backup":
+            project_id = mod_details.get("id")
+            files = mod_details.get("files", [])
+
+            found = False
+            mod_version = mod["version"].strip().lower()  # Define mod_version here
+            for file in files:
+                file_versions = file.get("gameVersions", [])
+                if isinstance(file_versions, list) and minecraft_version in file_versions:
+                    file_name_version = file["filename"].strip().lower()
+
+                    if mod_version in file_name_version:
+                        mod["projectID"] = project_id
+                        mod["fileID"] = file["fileId"]
+                        backup_available.append(mod)
+                        found = True
+                        break
+
+            if not found:
+                # Try to find the closest matching version
+                closest_version = None
+                for file in files:
+                    file_name_version = file["filename"].strip().lower()
+                    if mod_version in file_name_version:
+                        closest_version = file
+                        break
+
+                if not closest_version:
+                    for file in files:
+                        file_versions = file.get("gameVersions", [])
+                        if minecraft_version in file_versions:
+                            closest_version = file
+                            break
+
+                if closest_version:
+                    mod["projectID"] = project_id
+                    mod["fileID"] = closest_version["fileId"]
+                    backup_available.append(mod)
+                    found = True
+                    print(f"[ERROR 023] Using closest matching version for {mod['name']}: {closest_version['filename']} (mod_version: {mod['version']}, minecraft_version: {minecraft_version}, selected file: {closest_version['filename']}, versions: {closest_version.get('gameVersions', [])}) Please ensure Compatibility before distribution.")
+                if not found:
+                    still_unavailable.append(mod)
+                    print(f"[ERROR 022] No matching files found for {mod['name']} (slug: {slug}, version: {mod['version']})")
+                    return False, False  # Special error return value
+                    # print(f"Checked files: {[file['filename'] for file in files]}")
+                    # print(f"File versions: {[file.get('gameVersions', []) for file in files]}")
+        else:
+            still_unavailable.append(mod)
+            print(f"[ERROR 022]: Mod details not found for {mod['name']} (slug: {slug})")
+            return False, False  # Special error return value
+
+    return backup_available, still_unavailable
+
 def generate_modlist_html(mod_list, output_path, available_mods):
-    """Generate modlist.html file."""
+    """Generate modlist.html file.
+
+    Args:
+        mod_list (list): The list of all mods.
+        output_path (str): The path to save the generated HTML file.
+        available_mods (list): The list of available mods to include in the HTML file.
+    """
     print("Generating modlist.html...")
     
     html_content = "<ul>\n"
@@ -541,6 +679,13 @@ def generate_modlist_html(mod_list, output_path, available_mods):
         f.write(html_content)
 
 def extract_and_copy_file(src_path, dest_path, overrides_dir):
+    """Extract and copy a file to the specified directory.
+
+    Args:
+        src_path (str): The path to the source file.
+        dest_path (str): The path to the destination file.
+        overrides_dir (str): The directory to extract files to.
+    """
     try:
         # Copy the ZIP file instead of moving it
         dest_zip = os.path.join(overrides_dir, os.path.basename(src_path))
@@ -556,6 +701,17 @@ def extract_and_copy_file(src_path, dest_path, overrides_dir):
         print(f"Error extracting {src_path}: {e}")
 
 def create_curseforge_structure(mod_list, non_mod_list, downloads_dir, overrides_dir, available_mods, minecraft_version, forge_list):
+    """Create the CurseForge modpack structure.
+
+    Args:
+        mod_list (list): The list of mods.
+        non_mod_list (list): The list of non-mod files.
+        downloads_dir (str): The directory where mods are downloaded.
+        overrides_dir (str): The directory for overrides.
+        available_mods (list): The list of available mods.
+        minecraft_version (str): The Minecraft version.
+        forge_list (list): The list of Forge versions.
+    """
     print("\nCreating CurseForge modpack structure...")
 
     # Create necessary directories
@@ -634,7 +790,11 @@ def create_curseforge_structure(mod_list, non_mod_list, downloads_dir, overrides
     generate_modlist_html(mod_list, os.path.join(os.path.dirname(overrides_dir), "modlist.html"), available_mods)
 
 def zip_curseforge_modpack(curseforge_dir):
-    """Zip the CurseForge modpack."""
+    """Zip the CurseForge modpack.
+
+    Args:
+        curseforge_dir (str): The directory containing the CurseForge modpack.
+    """
     print("\nZipping CurseForge modpack...")
     
     # Get the parent directory (modpack_dir) that contains the curseforge folder
@@ -655,17 +815,6 @@ def zip_curseforge_modpack(curseforge_dir):
                 zipf.write(file_path, arcname)
     
     print(f"Created modpack ZIP at: {zip_filename}")
-
-# def sort_mod_list(mod_list):
-#     """Sort the mod list alphabetically by mod name."""
-#     return sorted(mod_list, key=lambda mod: mod["name"].lower())
-
-def check_stop(update_running=None):
-    """Check if the user has requested to stop the update process."""
-    if update_running and not update_running.is_set():
-        print("\nUpdate process cancelled by user.")
-        return True
-    return False
 
 def main(update_running=None):
     try:
